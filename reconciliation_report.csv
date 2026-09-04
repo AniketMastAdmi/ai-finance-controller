@@ -1,0 +1,61 @@
+invoice_id,transaction_id,customer,invoice_amount,settlement_amount,status,reason,deduction_percentage,days_to_settle,details
+INV1001,SET1001,Acme Corp,15000.0,15000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1002,SET1002,Zenith Tech,24500.0,24500.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1003,SET1003,Apex Retail,89000.0,89000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1004,SET1004,CloudScale Inc,12000.0,12000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1005,SET1005,Nexus Logistics,45000.0,45000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1006,SET1006,SolarWave Ltd,67000.0,67000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1007,SET1007,Quantum Health,115000.0,115000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1008,SET1008,Vertex Digital,32000.0,32000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1009,SET1009,Global Freight,98000.0,98000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1010,SET1010,Innovate Fin,54000.0,54000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1011,SET1011,BlueHorizon Media,18500.0,18500.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1012,SET1012,Starlight Systems,76000.0,76000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1013,SET1013,Pinnacle Foods,29000.0,29000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1014,SET1014,CyberShield Security,142000.0,142000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1015,SET1015,Atlas Mobility,63000.0,63000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1016,SET1016,Acme Corp,37500.0,37500.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1017,SET1017,Zenith Tech,81000.0,81000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1018,SET1018,Apex Retail,19500.0,19500.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1019,SET1019,CloudScale Inc,51000.0,51000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1020,SET1020,Nexus Logistics,110000.0,110000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1021,SET1021,SolarWave Ltd,22000.0,22000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1022,SET1022,Quantum Health,73000.0,73000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1023,SET1023,Vertex Digital,44000.0,44000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1024,SET1024,Global Freight,160000.0,160000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1025,SET1025,Innovate Fin,35000.0,35000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1026,SET1026,BlueHorizon Media,88000.0,88000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1027,SET1027,Starlight Systems,27000.0,27000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1028,SET1028,Pinnacle Foods,94000.0,94000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1029,SET1029,CyberShield Security,49000.0,49000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1030,SET1030,Atlas Mobility,125000.0,125000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1031,SET1031,Acme Corp,31000.0,31000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1032,SET1032,Zenith Tech,68000.0,68000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1033,SET1033,Apex Retail,17500.0,17500.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1034,SET1034,CloudScale Inc,105000.0,105000.0,MATCHED,clean_match,0.0,2,Exact amount and timely settlement match.
+INV1035,SET1035,Nexus Logistics,58000.0,58000.0,MATCHED,clean_match,0.0,3,Exact amount and timely settlement match.
+INV1036,SET1036,SolarWave Ltd,42000.0,42000.0,MATCHED,clean_match,0.0,4,Exact amount and timely settlement match.
+INV1037,SET1037,Quantum Health,50000.0,49450.0,MATCHED,fee_deduction,1.1,3,Standard payment gateway fee deduction of 1.1% (within 1.0%-3.5% tolerance).
+INV1038,SET1038,Vertex Digital,80000.0,79000.0,MATCHED,fee_deduction,1.25,3,Standard payment gateway fee deduction of 1.25% (within 1.0%-3.5% tolerance).
+INV1039,SET1039,Global Freight,120000.0,118200.0,MATCHED,fee_deduction,1.5,3,Standard payment gateway fee deduction of 1.5% (within 1.0%-3.5% tolerance).
+INV1040,SET1040,Innovate Fin,65000.0,63862.5,MATCHED,fee_deduction,1.75,3,Standard payment gateway fee deduction of 1.75% (within 1.0%-3.5% tolerance).
+INV1041,SET1041,BlueHorizon Media,95000.0,93100.0,MATCHED,fee_deduction,2.0,3,Standard payment gateway fee deduction of 2.0% (within 1.0%-3.5% tolerance).
+INV1042,SET1042,Starlight Systems,140000.0,136920.0,MATCHED,fee_deduction,2.2,3,Standard payment gateway fee deduction of 2.2% (within 1.0%-3.5% tolerance).
+INV1043,SET1043,Pinnacle Foods,75000.0,73125.0,MATCHED,fee_deduction,2.5,3,Standard payment gateway fee deduction of 2.5% (within 1.0%-3.5% tolerance).
+INV1044,SET1044,CyberShield Security,110000.0,107030.0,MATCHED,fee_deduction,2.7,3,Standard payment gateway fee deduction of 2.7% (within 1.0%-3.5% tolerance).
+INV1045,SET1045,Atlas Mobility,85000.0,82535.0,MATCHED,fee_deduction,2.9,3,Standard payment gateway fee deduction of 2.9% (within 1.0%-3.5% tolerance).
+INV1046,SET1046,Acme Corp,150000.0,145200.0,MATCHED,fee_deduction,3.2,3,Standard payment gateway fee deduction of 3.2% (within 1.0%-3.5% tolerance).
+INV1047,SET1047,Zenith Tech,200000.0,193200.0,MATCHED,fee_deduction,3.4,3,Standard payment gateway fee deduction of 3.4% (within 1.0%-3.5% tolerance).
+INV1048,SET1048,Apex Retail,175000.0,168962.5,MATCHED,fee_deduction,3.45,3,Standard payment gateway fee deduction of 3.45% (within 1.0%-3.5% tolerance).
+INV1049,SET1049,CloudScale Inc,60000.0,55500.0,EXCEPTION,amount_mismatch,7.5,4,"Discrepancy of ₹4,500.00 (7.5%) exceeds 3.5% fee tolerance."
+INV1050,SET1050,Nexus Logistics,130000.0,114400.0,EXCEPTION,amount_mismatch,12.0,4,"Discrepancy of ₹15,600.00 (12.0%) exceeds 3.5% fee tolerance."
+INV1051,SET1051,SolarWave Ltd,90000.0,72000.0,EXCEPTION,amount_mismatch,20.0,4,"Discrepancy of ₹18,000.00 (20.0%) exceeds 3.5% fee tolerance."
+INV1052,SET1052,Quantum Health,48000.0,48000.0,EXCEPTION,timing_gap,0.0,45,Settlement received after 45 days (SLA threshold is 14 days).
+INV1053,SET1053,Vertex Digital,112000.0,112000.0,EXCEPTION,timing_gap,0.0,55,Settlement received after 55 days (SLA threshold is 14 days).
+INV1054,SET1054,Global Freight,78000.0,78000.0,EXCEPTION,timing_gap,0.0,65,Settlement received after 65 days (SLA threshold is 14 days).
+INV1055,NONE,Innovate Fin,34000.0,0.0,EXCEPTION,missing_settlement,100.0,-1,No settlement record received for this invoice.
+INV1056,NONE,BlueHorizon Media,82000.0,0.0,EXCEPTION,missing_settlement,100.0,-1,No settlement record received for this invoice.
+INV1057,NONE,Starlight Systems,128000.0,0.0,EXCEPTION,missing_settlement,100.0,-1,No settlement record received for this invoice.
+INV1058,SET1055; SET1056,Pinnacle Foods,56000.0,112000.0,EXCEPTION,duplicate_settlement,-100.0,3,"Multiple settlements detected (2 records totaling ₹112,000.00)."
+INV1059,SET1057; SET1058,CyberShield Security,92000.0,184000.0,EXCEPTION,duplicate_settlement,-100.0,3,"Multiple settlements detected (2 records totaling ₹184,000.00)."
+INV1060,SET1059; SET1060,Atlas Mobility,145000.0,290000.0,EXCEPTION,duplicate_settlement,-100.0,3,"Multiple settlements detected (2 records totaling ₹290,000.00)."
