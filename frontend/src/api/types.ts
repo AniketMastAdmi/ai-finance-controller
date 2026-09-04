@@ -106,4 +106,8 @@ export interface UsageStats {
   failed_calls: number;
   average_tools_per_question: number;
   estimated_compute_units: number;
+  pricing_tier_usd?: number;
+  usd_to_inr_rate?: number;
+  estimated_usage_cost_usd?: number;
+  estimated_usage_cost_inr?: number;
 }

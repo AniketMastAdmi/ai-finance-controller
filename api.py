@@ -1,4 +1,4 @@
-"""
+a"""
 FastAPI REST API Service for Razorpay AI Finance Controller.
 Provides API-first access to the AI-CFO reasoning layer, deterministic tools,
 usage metering, and compliance audit trail.
@@ -53,6 +53,25 @@ def ask_question(req: AskRequest):
     """
     res = ask(req.question)
     return res
+
+class PricingRequest(BaseModel):
+    tier_usd: float = Field(..., ge=0.01, le=1.0, description="Investigation price in USD (e.g. 0.05, 0.10, 0.15)")
+
+class AdapterRequest(BaseModel):
+    records: List[Dict[str, Any]] = Field(..., description="Raw Razorpay-style settlement payloads")
+
+@app.post("/usage/pricing", tags=["Metering"])
+def update_pricing_tier(req: PricingRequest):
+    """Dynamically configure the investigation pricing tier ($0.05, $0.10, $0.15)."""
+    usage.set_pricing_tier(req.tier_usd)
+    return usage.get_usage_stats()
+
+@app.post("/adapter/normalize-settlements", tags=["Integration"])
+def normalize_settlements(req: AdapterRequest):
+    """Normalize external Razorpay payment gateway settlement records."""
+    from adapter import RazorpaySettlementAdapter
+    normalized = RazorpaySettlementAdapter.normalize_batch(req.records)
+    return {"total_records": len(normalized), "normalized": normalized}
 
 @app.get("/usage", tags=["Metering"])
 def get_usage():

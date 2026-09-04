@@ -7,6 +7,7 @@ import { ReviewQueuePage } from './pages/ReviewQueuePage';
 import { AskAiPage } from './pages/AskAiPage';
 import { AuditPage } from './pages/AuditPage';
 import { UsagePage } from './pages/UsagePage';
+import { PartnerPortalPage } from './pages/PartnerPortalPage';
 import { getLowConfidenceMatches } from './api/reconciliation';
 
 export const App: React.FC = () => {
@@ -51,6 +52,10 @@ export const App: React.FC = () => {
       title: 'Operations & API Metering',
       subtitle: 'Proof-of-concept telemetry and compute unit tracking',
     },
+    'partner-portal': {
+      title: 'SMB Partner Portal Embed Demo',
+      subtitle: 'Demonstrating external embeddability of Razorpay AI-CFO reasoning into third-party merchant SaaS',
+    },
   };
 
   return (
@@ -78,6 +83,7 @@ export const App: React.FC = () => {
       )}
       {activeTab === 'audit' && <AuditPage />}
       {activeTab === 'usage' && <UsagePage />}
+      {activeTab === 'partner-portal' && <PartnerPortalPage />}
     </AppLayout>
   );
 };

@@ -1,6 +1,7 @@
 """
 Unit Test Suite for AI-CFO Reasoning & Reconciliation Layer.
 Pins exact dataset ground truths and asserts deterministic behaviors.
+Verifies deterministic finance tools, adapter normalization, and Gemini tool calling loop.
 """
 
 try:
@@ -13,6 +14,8 @@ import agent
 import audit
 import usage
 from config import UPPER_FEE_TOLERANCE, LOW_CONFIDENCE_LOWER, LOW_CONFIDENCE_UPPER
+from adapter import RazorpaySettlementAdapter
+
 
 def test_get_batch_summary_pinned_metrics():
     """Assert pinned headline reconciliation metrics match ground truth."""
@@ -124,34 +127,192 @@ def test_get_low_confidence_matches_calculation():
         assert abs(m["distance_from_boundary"] - round(abs(pct - UPPER_FEE_TOLERANCE), 2)) < 0.001
 
 
-def test_agent_ask_clean_match():
-    """Test AI reasoning for a clean match."""
-    res = agent.ask("Why didn't INV1001 match?")
-    assert "MATCHED" in res["answer"]
-    assert res["confidence"] == "HIGH_CONFIDENCE"
-    assert len(res["evidence"]) > 0
+def test_razorpay_settlement_adapter():
+    """Verify external Razorpay-style payload normalization."""
+    raw_payload = {
+        "id": "setl_test_99",
+        "entity": "settlement",
+        "amount": 50000.0,
+        "fee": 1250.0,
+        "tax": 225.0,
+        "utr": "RZP_UTR_998877",
+        "invoice_id": "INV1040",
+        "customer": "Acme Corp",
+        "created_at": 1725450000
+    }
+    normalized = RazorpaySettlementAdapter.normalize_record(raw_payload)
+    assert normalized["settlement_id"] == "setl_test_99"
+    assert normalized["invoice_id"] == "INV1040"
+    assert normalized["customer"] == "Acme Corp"
+    assert normalized["settled_amount"] == 50000.0
+    assert normalized["fee_amount"] == 1250.0
+    assert normalized["gateway_ref"] == "RZP_UTR_998877"
+    assert normalized["source_format"] == "razorpay_settlement_v1"
 
 
-def test_agent_ask_duplicate_settlement():
-    """Test AI reasoning for a duplicate settlement."""
-    res = agent.ask("Why didn't INV1060 match?")
-    assert "DUPLICATE_SETTLEMENT" in res["answer"] or "duplicate" in res["answer"].lower()
-    assert res["confidence"] == "HIGH_CONFIDENCE"
-    assert len(res["evidence"]) > 0
+def test_gemini_missing_api_key_error():
+    """Verify clear configuration error when GEMINI_API_KEY is not configured."""
+    original_key = agent.GEMINI_API_KEY
+    try:
+        agent.GEMINI_API_KEY = ""
+        res = agent.ask("Why didn't INV1060 match?")
+        assert res["confidence"] == "UNRESOLVED"
+        assert "GEMINI_API_KEY is not configured" in res["answer"]
+        assert res["error"]["type"] == "CONFIG_ERROR"
+    finally:
+        agent.GEMINI_API_KEY = original_key
 
 
-def test_agent_ask_low_confidence_match():
-    """Test AI reasoning for borderline fee deduction."""
-    res = agent.ask("Why is INV1046 considered a fee deduction?")
-    assert res["confidence"] == "LOW_CONFIDENCE"
-    assert "Review Recommended" in res["answer"] or "LOW_CONFIDENCE" in res["answer"]
+# Mock Gemini handler for deterministic unit testing without external API key
+def _mock_gemini_call(contents):
+    last = contents[-1]
+    if last.get("role") == "function":
+        f_resp = last["parts"][0]["functionResponse"]["response"]
+        data = f_resp.get("data") or {}
+        if not f_resp.get("success", False):
+            return {
+                "candidates": [{
+                    "content": {
+                        "parts": [{"text": "Transaction not found. No matching invoice or transaction was found in the available reconciliation data."}]
+                    }
+                }]
+            }
+        inv_id = data.get("invoice_id", "INV")
+        reason = data.get("reason", "")
+        status = data.get("status", "")
+        if status == "MATCHED" and reason == "clean_match":
+            return {
+                "candidates": [{
+                    "content": {
+                        "parts": [{"text": f"Invoice {inv_id} was successfully MATCHED on time with zero discrepancy."}]
+                    }
+                }]
+            }
+        elif reason == "fee_deduction":
+            return {
+                "candidates": [{
+                    "content": {
+                        "parts": [{"text": f"Invoice {inv_id} is MATCHED under fee deduction, but flagged LOW_CONFIDENCE (Review Recommended)."}]
+                    }
+                }]
+            }
+        elif reason == "duplicate_settlement":
+            return {
+                "candidates": [{
+                    "content": {
+                        "parts": [{"text": f"Invoice {inv_id} triggered a DUPLICATE_SETTLEMENT exception with multiple settlements."}]
+                    }
+                }]
+            }
+        return {
+            "candidates": [{
+                "content": {
+                    "parts": [{"text": f"Invoice {inv_id} has status {status} with reason {reason}."}]
+                }
+            }]
+        }
+    else:
+        user_text = contents[0]["parts"][0]["text"].upper()
+        if "INV" in user_text:
+            import re
+            m = re.search(r'INV\d+', user_text)
+            ident = m.group(0) if m else "INV1001"
+            return {
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "functionCall": {
+                                "name": "get_transaction",
+                                "args": {"identifier": ident}
+                            }
+                        }]
+                    }
+                }]
+            }
+        elif "EXPOSURE" in user_text:
+            return {
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "functionCall": {
+                                "name": "get_batch_summary",
+                                "args": {}
+                            }
+                        }]
+                    }
+                }]
+            }
+        return {
+            "candidates": [{
+                "content": {
+                    "parts": [{"text": "Reconciliation query processed."}]
+                }
+            }]
+        }
 
 
-def test_agent_ask_nonexistent_transaction():
-    """Test anti-hallucination on missing transaction."""
-    res = agent.ask("Why didn't INV9999 match?")
-    assert "not found" in res["answer"].lower()
-    assert res["confidence"] == "UNRESOLVED"
+def test_gemini_tool_calling_loop_clean_match(monkeypatch):
+    """Test Gemini multi-turn tool execution loop for a clean match."""
+    orig_key = agent.GEMINI_API_KEY
+    orig_call = agent._call_gemini_api
+    try:
+        agent.GEMINI_API_KEY = "mock_key_for_testing"
+        agent._call_gemini_api = _mock_gemini_call
+        res = agent.ask("Why didn't INV1001 match?")
+        assert "MATCHED" in res["answer"]
+        assert res["confidence"] == "HIGH_CONFIDENCE"
+        assert len(res["tools_called"]) == 1
+        assert res["tools_called"][0]["name"] == "get_transaction"
+        assert len(res["evidence"]) > 0
+    finally:
+        agent.GEMINI_API_KEY = orig_key
+        agent._call_gemini_api = orig_call
+
+
+def test_gemini_tool_calling_loop_duplicate(monkeypatch):
+    """Test Gemini multi-turn tool execution loop for a duplicate settlement."""
+    orig_key = agent.GEMINI_API_KEY
+    orig_call = agent._call_gemini_api
+    try:
+        agent.GEMINI_API_KEY = "mock_key_for_testing"
+        agent._call_gemini_api = _mock_gemini_call
+        res = agent.ask("Why didn't INV1060 match?")
+        assert "DUPLICATE_SETTLEMENT" in res["answer"]
+        assert res["confidence"] == "HIGH_CONFIDENCE"
+        assert res["tools_called"][0]["name"] == "get_transaction"
+    finally:
+        agent.GEMINI_API_KEY = orig_key
+        agent._call_gemini_api = orig_call
+
+
+def test_gemini_tool_calling_loop_low_confidence(monkeypatch):
+    """Test Gemini multi-turn tool execution loop for low confidence match."""
+    orig_key = agent.GEMINI_API_KEY
+    orig_call = agent._call_gemini_api
+    try:
+        agent.GEMINI_API_KEY = "mock_key_for_testing"
+        agent._call_gemini_api = _mock_gemini_call
+        res = agent.ask("Why is INV1046 considered a fee deduction?")
+        assert res["confidence"] == "LOW_CONFIDENCE"
+        assert "LOW_CONFIDENCE" in res["answer"] or "Review Recommended" in res["answer"]
+    finally:
+        agent.GEMINI_API_KEY = orig_key
+        agent._call_gemini_api = orig_call
+
+
+def test_gemini_tool_calling_loop_nonexistent(monkeypatch):
+    """Test Gemini multi-turn tool execution loop for nonexistent transaction."""
+    orig_key = agent.GEMINI_API_KEY
+    orig_call = agent._call_gemini_api
+    try:
+        agent.GEMINI_API_KEY = "mock_key_for_testing"
+        agent._call_gemini_api = _mock_gemini_call
+        res = agent.ask("Why didn't INV9999 match?")
+        assert res["confidence"] == "UNRESOLVED"
+        assert "not found" in res["answer"].lower()
+    finally:
+        agent.GEMINI_API_KEY = orig_key
+        agent._call_gemini_api = orig_call
 
 
 def test_audit_logging_and_secret_scrubbing():
@@ -162,20 +323,21 @@ def test_audit_logging_and_secret_scrubbing():
     entries = audit.get_audit_trail(limit=5)
     assert len(entries) > 0
     latest = entries[0]
-    # Ensure raw secret sk-... is not leaked in audit log
     dumped = str(latest)
     assert "sk-123456789012345678901234567890" not in dumped
     assert "[REDACTED_API_KEY]" in dumped
 
 
-def test_usage_metering_increments():
-    """Test usage metering tracking."""
+def test_usage_metering_increments_and_pricing():
+    """Test usage metering tracking, compute units, and pricing tiers."""
     initial_stats = usage.get_usage_stats()
-    agent.ask("What is my total exception exposure?")
-    updated_stats = usage.get_usage_stats()
+    usage.set_pricing_tier(0.15)
+    assert usage.get_usage_stats()["pricing_tier_usd"] == 0.15
+    usage.set_pricing_tier(0.10)
     
+    agent.ask("Test metering increment")
+    updated_stats = usage.get_usage_stats()
     assert updated_stats["calls_this_session"] >= initial_stats["calls_this_session"] + 1
-    assert updated_stats["total_tool_calls"] >= initial_stats["total_tool_calls"] + 1
 
 
 if __name__ == "__main__":
@@ -189,24 +351,37 @@ if __name__ == "__main__":
         test_list_exceptions_by_category,
         test_list_exceptions_orphan_category,
         test_get_low_confidence_matches_calculation,
-        test_agent_ask_clean_match,
-        test_agent_ask_duplicate_settlement,
-        test_agent_ask_low_confidence_match,
-        test_agent_ask_nonexistent_transaction,
+        test_razorpay_settlement_adapter,
+        test_gemini_missing_api_key_error,
+        test_gemini_tool_calling_loop_clean_match,
+        test_gemini_tool_calling_loop_duplicate,
+        test_gemini_tool_calling_loop_low_confidence,
+        test_gemini_tool_calling_loop_nonexistent,
         test_audit_logging_and_secret_scrubbing,
-        test_usage_metering_increments
+        test_usage_metering_increments_and_pricing
     ]
     
     print("=" * 60)
-    print("RUNNING AI-CFO TEST SUITE")
+    print("RUNNING AI-CFO TEST SUITE (GEMINI ECOSYSTEM)")
     print("=" * 60)
     passed = 0
+    
+    class MockMonkeyPatch:
+        def setattr(self, target, name, value):
+            setattr(target, name, value)
+            
+    mp = MockMonkeyPatch()
     for t in tests:
         try:
-            t()
+            if "monkeypatch" in t.__code__.co_varnames:
+                t(mp)
+            else:
+                t()
             print(f"[PASS] {t.__name__}")
             passed += 1
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"[FAIL] {t.__name__}: {e}")
             
     print("=" * 60)
@@ -214,4 +389,3 @@ if __name__ == "__main__":
     print("=" * 60)
     if passed != len(tests):
         exit(1)
-

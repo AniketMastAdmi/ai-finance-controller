@@ -3,11 +3,18 @@ Configuration module for Razorpay AI Finance Controller.
 Central source of truth for:
 - File paths
 - Fee tolerance bands & Low-confidence thresholds
-- LLM provider settings & Anti-hallucination rules
+- Google Gemini LLM settings & Pricing configuration
 """
 
 import os
 from pathlib import Path
+
+# Load .env if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Base directories
 BASE_DIR = Path(__file__).resolve().parent
@@ -30,10 +37,14 @@ LOW_CONFIDENCE_DELTA = 0.5
 LOW_CONFIDENCE_LOWER = UPPER_FEE_TOLERANCE - LOW_CONFIDENCE_DELTA  # 3.0%
 LOW_CONFIDENCE_UPPER = UPPER_FEE_TOLERANCE + LOW_CONFIDENCE_DELTA  # 4.0%
 
-# AI / Provider Settings
-AI_PROVIDER = os.getenv("AI_PROVIDER", "google_genai")  # Options: google_genai, openai, groq, anthropic, heuristic_fallback
-AI_MODEL = os.getenv("AI_MODEL", "gemini-2.5-flash")
-AI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GROQ_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or ""
+# AI / Provider Settings (Google Gemini Ecosystem)
+AI_PROVIDER = "google_gemini"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+
+# Commercial Usage Pricing Settings
+AI_INVESTIGATION_PRICE_USD = float(os.getenv("AI_INVESTIGATION_PRICE_USD", "0.10"))
+USD_TO_INR = float(os.getenv("USD_TO_INR", "85.0"))
 
 # Service Settings
 API_HOST = os.getenv("API_HOST", "0.0.0.0")

@@ -1,361 +1,246 @@
 """
 AI-CFO Reasoning Core for Razorpay AI Finance Controller.
-Provider-agnostic reasoning layer that translates financial queries into deterministic tool calls,
-constructs verifiable evidence, applies confidence classifications, and maintains complete audit trails.
+Powered by Google Gemini with native tool/function calling.
+
+The reasoning agent executes:
+Natural-language question -> Gemini decides tool -> Controlled execution of tools.py -> 
+Evidence returned -> Gemini explains result -> Deterministic confidence enforcement -> Audit log.
 
 Directly importable:
     from agent import ask
     result = ask("Why didn't INV1060 match?")
 """
 
-import re
 import time
+import requests
 from typing import Dict, Any, List, Optional
 import tools
 import audit
 import usage
-from config import AI_PROVIDER, AI_MODEL, AI_API_KEY
+from config import GEMINI_MODEL, GEMINI_API_KEY, LOW_CONFIDENCE_LOWER, LOW_CONFIDENCE_UPPER
 
-SYSTEM_PROMPT = """
-You are the AI-CFO Finance Controller Reasoning Layer.
+SYSTEM_PROMPT = """You are the AI-CFO Finance Controller Reasoning Layer.
 Your role is to explain reconciliation results, identify low-confidence borderline matches, and provide verified evidence for finance operations teams.
 
 Strict Operational Guidelines:
 1. Never invent or hallucinate an invoice ID, transaction ID, customer, amount, settlement date, or financial metric.
 2. Every answer must be supported by evidence retrieved from deterministic tools.
 3. If a transaction is not found, state plainly that it does not exist in the reconciliation records.
-4. If a transaction is classified as MATCHED but has a fee deduction near the upper tolerance limit (3.0% - 4.0%), flag it as LOW_CONFIDENCE and recommend human review.
+4. If a transaction is classified as MATCHED but has a fee deduction near the upper tolerance limit (3.0% - 4.0%), state clearly that the reconciliation engine classified it as MATCHED, but the AI-CFO confidence layer recommends human review because it is close to the fee tolerance boundary.
 5. Clearly distinguish between facts (tool outputs) and interpretation (reconciliation assessment).
-6. Always return confidence level: HIGH_CONFIDENCE, LOW_CONFIDENCE, or UNRESOLVED.
-"""
+6. Do not perform independent financial arithmetic when a deterministic tool provides the calculation.
+7. Always provide clear, professional, executive-grade financial explanations."""
 
-def _extract_identifiers(text: str) -> List[str]:
-    """Extract invoice IDs (INVxxxx) or settlement/transaction IDs (SETxxxx, TXNxxxx, RZP_PAY_xxxx)"""
-    patterns = [
-        r'\bINV\d+\b',
-        r'\bSET\d+\b',
-        r'\bTXN\d+\b',
-        r'\bRZP_PAY_[A-Z0-9_]+\b',
-        r'\bRZP_ORPHAN_\d+\b'
-    ]
-    matches = []
-    for p in patterns:
-        found = re.findall(p, text, re.IGNORECASE)
-        matches.extend([m.upper() for m in found])
-    return list(dict.fromkeys(matches))
+# Approved Deterministic Tool Registry
+TOOL_REGISTRY = {
+    "get_transaction": tools.get_transaction,
+    "list_exceptions": tools.list_exceptions,
+    "get_batch_summary": tools.get_batch_summary,
+    "get_low_confidence_matches": tools.get_low_confidence_matches,
+    "get_all_reconciliation_records": tools.get_all_reconciliation_records,
+}
 
-
-def _semantic_reasoning(question: str) -> Dict[str, Any]:
-    """
-    High-precision financial reasoning engine.
-    Determines tool execution plan, executes deterministic tools, synthesizes evidence-backed explanations,
-    and returns a structured response.
-    """
-    q_lower = question.lower()
-    tools_called = []
-    evidence = []
-    
-    identifiers = _extract_identifiers(question)
-    
-    # CASE 1: Query about specific invoice or transaction identifier(s)
-    if identifiers:
-        primary_id = identifiers[0]
-        t0 = time.time()
-        tool_res = tools.get_transaction(primary_id)
-        latency = round((time.time() - t0) * 1000, 2)
-        
-        tools_called.append({
-            "name": "get_transaction",
-            "arguments": {"identifier": primary_id},
-            "result": tool_res,
-            "latency_ms": latency
-        })
-        
-        if not tool_res["success"]:
-            # Graceful failure handling for nonexistent transaction
-            ans = f"Transaction / Invoice '{primary_id}' was not found in the reconciliation dataset. No matching invoice or settlement record exists in the system."
-            return {
-                "answer": ans,
-                "confidence": "UNRESOLVED",
-                "evidence": [],
-                "tools_called": tools_called,
-                "error": tool_res.get("error")
+# Google Gemini Function Declarations Schema
+GEMINI_TOOLS_DECLARATION = [
+    {
+        "function_declarations": [
+            {
+                "name": "get_transaction",
+                "description": "Retrieve complete financial details about a specific invoice or transaction (status, invoice amount, settlement amount, deduction percentage, days to settle, confidence).",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "identifier": {
+                            "type": "STRING",
+                            "description": "The invoice ID (e.g. INV1060, INV1001) or settlement/transaction ID (e.g. SET1060, RZP_PAY_xxx)."
+                        }
+                    },
+                    "required": ["identifier"]
+                }
+            },
+            {
+                "name": "list_exceptions",
+                "description": "List all invoice-level exceptions or filter by specific exception category.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "category": {
+                            "type": "STRING",
+                            "description": "Optional category filter: 'amount_mismatch', 'timing_gap', 'missing_settlement', 'duplicate_settlement', or 'orphan_settlement'."
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_batch_summary",
+                "description": "Retrieve deterministic batch-level financial metrics (total invoices, match rate %, total exception count, total exception exposure in INR, orphan settlements count & INR value, category breakdown).",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "get_low_confidence_matches",
+                "description": "Find transactions classified as MATCHED under fee deduction whose deduction percentage is borderline (within 0.5% of upper 3.5% boundary: 3.0% - 4.0%), requiring human review.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "get_all_reconciliation_records",
+                "description": "Retrieve all 60 reconciliation ledger records from reconciliation_report.csv.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {}
+                }
             }
-            
-        data = tool_res["data"]
-        evidence.append({
-            "invoice_id": data["invoice_id"],
-            "transaction_id": data["transaction_id"],
-            "customer": data["customer"],
-            "invoice_amount": data["invoice_amount"],
-            "settlement_amount": data["settlement_amount"],
-            "status": data["status"],
-            "reason": data["reason"],
-            "source": tool_res["source"]
-        })
-        
-        status = data["status"]
-        reason = data["reason"]
-        cust = data["customer"]
-        inv_amt = data["invoice_amount"]
-        set_amt = data["settlement_amount"]
-        pct = data["deduction_percentage"]
-        confidence = data.get("confidence", "HIGH_CONFIDENCE")
-        
-        # Reason synthesis
-        if status == "MATCHED":
-            if reason == "clean_match":
-                ans = (
-                    f"Invoice {primary_id} for customer {cust} (₹{inv_amt:,.2f}) was successfully MATCHED. "
-                    f"Settlement {data['transaction_id']} was received on time with zero discrepancy (100% payout of ₹{set_amt:,.2f})."
-                )
-            elif reason == "fee_deduction":
-                if confidence == "LOW_CONFIDENCE":
-                    ans = (
-                        f"Invoice {primary_id} for {cust} (₹{inv_amt:,.2f}) is marked as MATCHED by the reconciliation engine, "
-                        f"but our AI-CFO confidence layer flags it as LOW_CONFIDENCE (Review Recommended). "
-                        f"The gateway fee deduction is {pct}% (₹{inv_amt - set_amt:,.2f}), which is near the upper tolerance limit of 3.5%. "
-                        f"Finance review is recommended to confirm whether this is a legitimate tier fee or an unauthorized discount/short payment."
-                    )
-                else:
-                    ans = (
-                        f"Invoice {primary_id} for {cust} (₹{inv_amt:,.2f}) is MATCHED with a standard gateway fee deduction of {pct}% "
-                        f"(settled ₹{set_amt:,.2f}, fee ₹{inv_amt - set_amt:,.2f}). This falls safely within the normal 1.0%–3.5% fee tolerance."
-                    )
-        else: # EXCEPTION
-            if reason == "amount_mismatch":
-                ans = (
-                    f"Invoice {primary_id} for {cust} (₹{inv_amt:,.2f}) failed reconciliation with an AMOUNT_MISMATCH exception. "
-                    f"The settled amount was ₹{set_amt:,.2f}, leaving an unexplained variance of ₹{inv_amt - set_amt:,.2f} ({pct}%), "
-                    f"which exceeds the allowable 3.5% fee tolerance band."
-                )
-            elif reason == "timing_gap":
-                ans = (
-                    f"Invoice {primary_id} for {cust} (₹{inv_amt:,.2f}) resulted in a TIMING_GAP exception. "
-                    f"While the settled amount matched (₹{set_amt:,.2f}), settlement took {data['days_to_settle']} days, "
-                    f"violating the standard 14-day SLA threshold."
-                )
-            elif reason == "missing_settlement":
-                ans = (
-                    f"Invoice {primary_id} for {cust} (₹{inv_amt:,.2f}) is an EXCEPTION due to MISSING_SETTLEMENT. "
-                    f"No corresponding payment gateway settlement record has been received in the current batch."
-                )
-            elif reason == "duplicate_settlement":
-                ans = (
-                    f"Invoice {primary_id} for {cust} (₹{inv_amt:,.2f}) triggered a DUPLICATE_SETTLEMENT exception. "
-                    f"Multiple settlements ({data['transaction_id']}) were received totaling ₹{set_amt:,.2f}. "
-                    f"This indicates a potential double disbursement or split settlement requiring immediate review."
-                )
-            elif reason == "orphan_settlement":
-                ans = (
-                    f"Settlement {data['transaction_id']} (₹{set_amt:,.2f}) from {cust} is an ORPHAN_SETTLEMENT. "
-                    f"Funds were received in the gateway without any matching invoice ID in the ledger."
-                )
-            else:
-                ans = f"Invoice {primary_id} resulted in exception '{reason}': {data['details']}."
-                
-        return {
-            "answer": ans,
-            "confidence": confidence,
-            "evidence": evidence,
-            "tools_called": tools_called,
-            "error": None
-        }
+        ]
+    }
+]
 
-    # CASE 2: Low-confidence / Risky / Borderline matches question
-    if any(k in q_lower for k in ["low confidence", "risky", "borderline", "review recommended", "should i review", "marked matched"]):
-        t0 = time.time()
-        tool_res = tools.get_low_confidence_matches()
-        latency = round((time.time() - t0) * 1000, 2)
-        
-        tools_called.append({
-            "name": "get_low_confidence_matches",
-            "arguments": {},
-            "result": tool_res,
-            "latency_ms": latency
-        })
-        
-        matches = tool_res["data"]["matches"]
-        for m in matches:
-            evidence.append({
-                "invoice_id": m["invoice_id"],
-                "transaction_id": m["transaction_id"],
-                "customer": m["customer"],
-                "invoice_amount": m["invoice_amount"],
-                "settled_amount": m["settled_amount"],
-                "deduction_percentage": m["deduction_percentage"],
-                "distance_from_boundary": m["distance_from_boundary"],
-                "source": tool_res["source"]
-            })
-            
-        inv_list = ", ".join([f"{m['invoice_id']} ({m['customer']}: {m['deduction_percentage']}%)" for m in matches])
-        ans = (
-            f"Identified {len(matches)} low-confidence match(es) that passed the reconciliation engine but sit dangerously close to the 3.5% fee tolerance boundary (3.0% - 4.0%):\n\n"
-            f"{inv_list}.\n\n"
-            f"The AI-CFO confidence layer recommends manual verification on these transactions to ensure they represent legitimate processing fees rather than concealed discrepancies."
-        )
-        return {
-            "answer": ans,
-            "confidence": "HIGH_CONFIDENCE",
-            "evidence": evidence,
-            "tools_called": tools_called,
-            "error": None
-        }
 
-    # CASE 3: Category-specific exceptions query (missing, duplicate, timing, mismatch, orphan)
-    cat_mapping = {
-        "missing": "missing_settlement",
-        "duplicate": "duplicate_settlement",
-        "timing": "timing_gap",
-        "mismatch": "amount_mismatch",
-        "orphan": "orphan_settlement"
+def _call_gemini_api(contents: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Execute raw HTTP request to Google Gemini API with system instructions and tools."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    
+    payload = {
+        "contents": contents,
+        "system_instruction": {
+            "parts": [{"text": SYSTEM_PROMPT}]
+        },
+        "tools": GEMINI_TOOLS_DECLARATION,
+        "generationConfig": {
+            "temperature": 0.1,
+            "maxOutputTokens": 1024
+        }
     }
     
-    target_cat = None
-    for kw, cat_name in cat_mapping.items():
-        if kw in q_lower:
-            target_cat = cat_name
-            break
-            
-    if target_cat:
-        t0 = time.time()
-        tool_res = tools.list_exceptions(target_cat)
-        latency = round((time.time() - t0) * 1000, 2)
+    response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
+    
+    if response.status_code != 200:
+        error_msg = response.text
+        try:
+            err_json = response.json()
+            error_msg = err_json.get("error", {}).get("message", response.text)
+        except Exception:
+            pass
+        raise RuntimeError(f"Gemini API Error ({response.status_code}): {error_msg}")
         
-        tools_called.append({
-            "name": "list_exceptions",
-            "arguments": {"category": target_cat},
-            "result": tool_res,
-            "latency_ms": latency
-        })
-        
-        excs = tool_res["data"]["exceptions"]
-        total_val = sum(e.get("invoice_amount", 0) or e.get("settlement_amount", 0) for e in excs)
-        
-        for e in excs:
-            evidence.append({
-                "invoice_id": e.get("invoice_id", "NONE"),
-                "transaction_id": e.get("transaction_id", "NONE"),
-                "customer": e.get("customer", "UNKNOWN"),
-                "amount": e.get("invoice_amount") or e.get("settlement_amount"),
-                "reason": target_cat,
-                "source": tool_res["source"]
-            })
-            
-        item_labels = []
-        for e in excs:
-            disp_id = e.get("invoice_id") if e.get("invoice_id") not in (None, "", "NONE") else e.get("transaction_id", "UNKNOWN")
-            amt = e.get("invoice_amount") or e.get("settlement_amount", 0.0)
-            item_labels.append(f"{disp_id} ({e['customer']}: ₹{amt:,.2f})")
-            
-        items_str = ", ".join(item_labels)
-        ans = (
-            f"Found {len(excs)} exception(s) under category '{target_cat}' totaling ₹{total_val:,.2f}:\n\n"
-            f"{items_str}."
-        )
-        return {
-            "answer": ans,
-            "confidence": "HIGH_CONFIDENCE",
-            "evidence": evidence,
-            "tools_called": tools_called,
-            "error": None
-        }
+    return response.json()
 
-    # CASE 4: Customer-level exception aggregation
-    if any(k in q_lower for k in ["customer", "customers", "client", "who has the most"]):
-        t0 = time.time()
-        tool_res = tools.list_exceptions()
-        latency = round((time.time() - t0) * 1000, 2)
-        
-        tools_called.append({
-            "name": "list_exceptions",
-            "arguments": {"category": None},
-            "result": tool_res,
-            "latency_ms": latency
-        })
-        
-        excs = tool_res["data"]["exceptions"]
-        cust_counts = {}
-        cust_exposure = {}
-        for e in excs:
-            c = e["customer"]
-            cust_counts[c] = cust_counts.get(c, 0) + 1
-            cust_exposure[c] = cust_exposure.get(c, 0.0) + e["invoice_amount"]
-            
-        sorted_custs = sorted(cust_counts.items(), key=lambda x: (x[1], cust_exposure.get(x[0], 0)), reverse=True)
-        top_str = "\n".join([f"- **{c}**: {cnt} exception(s), total exposure ₹{cust_exposure[c]:,.2f}" for c, cnt in sorted_custs[:5]])
-        
-        for e in excs:
-            evidence.append({
-                "customer": e["customer"],
-                "invoice_id": e["invoice_id"],
-                "amount": e["invoice_amount"],
-                "reason": e["reason"],
-                "source": tool_res["source"]
-            })
-            
-        ans = f"Customer exception breakdown across {len(excs)} total exceptions:\n\n{top_str}"
-        return {
-            "answer": ans,
-            "confidence": "HIGH_CONFIDENCE",
-            "evidence": evidence,
-            "tools_called": tools_called,
-            "error": None
-        }
 
-    # CASE 5: Exposure, Health, KPIs, or General Batch Summary
+def _execute_tool_safely(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute tool strictly from the approved registry with latency tracking."""
+    if tool_name not in TOOL_REGISTRY:
+        return {
+            "success": False,
+            "data": None,
+            "error": {
+                "type": "UNKNOWN_TOOL",
+                "message": f"Tool '{tool_name}' is not in the approved financial tools registry."
+            }
+        }
+        
+    tool_func = TOOL_REGISTRY[tool_name]
     t0 = time.time()
-    tool_res = tools.get_batch_summary()
-    latency = round((time.time() - t0) * 1000, 2)
-    
-    tools_called.append({
-        "name": "get_batch_summary",
-        "arguments": {},
-        "result": tool_res,
-        "latency_ms": latency
-    })
-    
-    b_data = tool_res["data"]
-    evidence.append({
-        "total_invoices": b_data["total_invoices"],
-        "match_rate": f"{b_data['match_rate_percentage']}%",
-        "exception_invoices": b_data["exception_invoices"],
-        "total_exception_exposure_inr": b_data["total_exception_exposure_inr"],
-        "orphan_settlement_count": b_data["orphan_settlement_count"],
-        "source": tool_res["source"]
-    })
-    
-    if any(k in q_lower for k in ["exposure", "value", "rupees", "how much"]):
-        ans = (
-            f"The total exception exposure for this batch is ₹{b_data['total_exception_exposure_inr']:,.2f} across {b_data['exception_invoices']} exception invoices. "
-            f"Additionally, there are {b_data['orphan_settlement_count']} orphan settlements holding ₹{b_data['total_orphan_settlement_value_inr']:,.2f} in unlinked gateway receipts."
-        )
-    else:
-        cats_str = ", ".join([f"{k}: {v}" for k, v in b_data["exception_breakdown"].items()])
-        ans = (
-            f"Reconciliation Batch Summary:\n"
-            f"- **Match Rate**: {b_data['match_rate_percentage']}% ({b_data['matched_invoices']}/{b_data['total_invoices']} invoices matched)\n"
-            f"- **Invoice Exceptions**: {b_data['exception_invoices']} invoices ({b_data['exception_rate_percentage']}%)\n"
-            f"- **Total Exception Exposure**: ₹{b_data['total_exception_exposure_inr']:,.2f}\n"
-            f"- **Orphan Settlements**: {b_data['orphan_settlement_count']} settlements totaling ₹{b_data['total_orphan_settlement_value_inr']:,.2f}\n"
-            f"- **Exception Breakdown**: {cats_str}\n"
-            f"- **Low-Confidence Matches**: {b_data['low_confidence_match_count']} borderline match(es) recommended for review."
-        )
-        
+    try:
+        result = tool_func(**args)
+    except Exception as e:
+        result = {
+            "success": False,
+            "data": None,
+            "error": {
+                "type": "TOOL_EXECUTION_ERROR",
+                "message": str(e)
+            }
+        }
+    latency_ms = round((time.time() - t0) * 1000, 2)
     return {
-        "answer": ans,
-        "confidence": "HIGH_CONFIDENCE",
-        "evidence": evidence,
-        "tools_called": tools_called,
-        "error": None
+        "name": tool_name,
+        "arguments": args,
+        "result": result,
+        "latency_ms": latency_ms
     }
+
+
+def _extract_evidence_and_confidence(tools_called: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], str]:
+    """Extract machine-readable evidence items and apply deterministic confidence precedence."""
+    evidence = []
+    confidence = "HIGH_CONFIDENCE"
+    
+    for tc in tools_called:
+        t_name = tc["name"]
+        res = tc["result"]
+        
+        if not res.get("success", False):
+            if res.get("error", {}).get("type") in ("TRANSACTION_NOT_FOUND", "INVALID_IDENTIFIER_FORMAT"):
+                confidence = "UNRESOLVED"
+            continue
+            
+        data = res.get("data")
+        if not data:
+            continue
+            
+        if t_name == "get_transaction":
+            ev_item = {
+                "invoice_id": data.get("invoice_id", "NONE"),
+                "transaction_id": data.get("transaction_id", "NONE"),
+                "customer": data.get("customer", "UNKNOWN"),
+                "invoice_amount": data.get("invoice_amount", 0.0),
+                "settlement_amount": data.get("settlement_amount", 0.0),
+                "status": data.get("status"),
+                "reason": data.get("reason"),
+                "deduction_percentage": data.get("deduction_percentage", 0.0),
+                "source": res.get("source", "reconciliation_report.csv")
+            }
+            evidence.append(ev_item)
+            if data.get("confidence") == "LOW_CONFIDENCE":
+                confidence = "LOW_CONFIDENCE"
+                
+        elif t_name == "get_low_confidence_matches":
+            confidence = "LOW_CONFIDENCE"
+            for m in data.get("matches", []):
+                evidence.append({
+                    "invoice_id": m.get("invoice_id"),
+                    "transaction_id": m.get("transaction_id"),
+                    "customer": m.get("customer"),
+                    "invoice_amount": m.get("invoice_amount"),
+                    "settled_amount": m.get("settled_amount"),
+                    "deduction_percentage": m.get("deduction_percentage"),
+                    "distance_from_boundary": m.get("distance_from_boundary"),
+                    "source": res.get("source", "reconciliation_report.csv")
+                })
+                
+        elif t_name == "list_exceptions":
+            for exc in data.get("exceptions", []):
+                evidence.append({
+                    "invoice_id": exc.get("invoice_id", "NONE"),
+                    "transaction_id": exc.get("transaction_id", "NONE"),
+                    "customer": exc.get("customer"),
+                    "amount": exc.get("invoice_amount") or exc.get("settlement_amount"),
+                    "reason": exc.get("reason"),
+                    "source": res.get("source", "reconciliation_report.csv")
+                })
+                
+        elif t_name == "get_batch_summary":
+            evidence.append({
+                "total_invoices": data.get("total_invoices"),
+                "match_rate": f"{data.get('match_rate_percentage')}%",
+                "exception_invoices": data.get("exception_invoices"),
+                "total_exception_exposure_inr": data.get("total_exception_exposure_inr"),
+                "orphan_settlement_count": data.get("orphan_settlement_count"),
+                "source": res.get("source", "reconciliation_report.csv")
+            })
+            
+    return evidence, confidence
 
 
 def ask(question: str) -> Dict[str, Any]:
     """
     Public entry point for AI-CFO reasoning layer.
-    Accepts natural language question, coordinates tool calls, logs audit trails, meters usage,
-    and returns structured response with answer, confidence, and machine-readable evidence.
+    Coordinates genuine Google Gemini tool-calling, logs audit trails, meters usage,
+    and returns structured response with answer, confidence, and machine evidence.
     """
     if not question or not isinstance(question, str) or not question.strip():
         usage.record_question_call(success=False)
@@ -371,22 +256,137 @@ def ask(question: str) -> Dict[str, Any]:
             }
         }
         
-    result = _semantic_reasoning(question.strip())
+    # Check for GEMINI_API_KEY
+    if not GEMINI_API_KEY:
+        usage.record_question_call(success=False)
+        error_info = {
+            "type": "CONFIG_ERROR",
+            "message": "GEMINI_API_KEY is not configured. Please configure your Gemini API key before using the AI reasoning service."
+        }
+        ans = "GEMINI_API_KEY is not configured.\nPlease configure your Gemini API key before using the AI reasoning service."
+        
+        audit.log_interaction(
+            question=question.strip(),
+            tools=[],
+            answer=ans,
+            confidence="UNRESOLVED",
+            evidence=[],
+            error=error_info,
+            usage=usage.get_usage_stats()
+        )
+        
+        return {
+            "answer": ans,
+            "confidence": "UNRESOLVED",
+            "evidence": [],
+            "tools_called": [],
+            "usage": usage.get_usage_stats(),
+            "error": error_info
+        }
+
+    # Prepare Gemini conversation
+    contents = [
+        {"role": "user", "parts": [{"text": question.strip()}]}
+    ]
+    tools_called = []
+    final_answer = ""
+    error_info = None
+
+    try:
+        # Multi-turn tool execution loop (max 4 turns)
+        max_turns = 4
+        for _ in range(max_turns):
+            api_res = _call_gemini_api(contents)
+            candidates = api_res.get("candidates", [])
+            if not candidates:
+                raise RuntimeError("No candidate response returned by Gemini API.")
+                
+            first_candidate = candidates[0]
+            content = first_candidate.get("content", {})
+            parts = content.get("parts", [])
+            
+            # Check for functionCall parts
+            function_calls = [p["functionCall"] for p in parts if "functionCall" in p]
+            
+            if not function_calls:
+                # Terminal answer reached
+                text_parts = [p.get("text", "") for p in parts if "text" in p]
+                final_answer = "\n".join(text_parts).strip()
+                break
+                
+            # Append model's tool request to contents
+            contents.append(content)
+            
+            # Execute requested functions
+            function_response_parts = []
+            for fc in function_calls:
+                fn_name = fc.get("name")
+                fn_args = fc.get("args", {})
+                
+                tool_exec = _execute_tool_safely(fn_name, fn_args)
+                tools_called.append(tool_exec)
+                
+                function_response_parts.append({
+                    "functionResponse": {
+                        "name": fn_name,
+                        "response": tool_exec["result"]
+                    }
+                })
+                
+            # Feed function responses back to Gemini
+            contents.append({
+                "role": "function",
+                "parts": function_response_parts
+            })
+            
+    except Exception as e:
+        error_info = {
+            "type": "GEMINI_REASONING_ERROR",
+            "message": str(e)
+        }
+        final_answer = f"The finance reasoning service encountered an error while processing your request: {str(e)}"
+
+    # Extract verifiable machine evidence and apply deterministic confidence precedence
+    evidence, confidence = _extract_evidence_and_confidence(tools_called)
     
+    # Nonexistent transaction graceful response check
+    missing_tc = next(
+        (tc for tc in tools_called
+         if isinstance(tc.get("result"), dict)
+         and isinstance(tc["result"].get("error"), dict)
+         and tc["result"]["error"].get("type") == "TRANSACTION_NOT_FOUND"),
+        None
+    )
+    if missing_tc:
+        confidence = "UNRESOLVED"
+        target_id = missing_tc.get("arguments", {}).get("identifier", "")
+        if not final_answer or "not found" not in final_answer.lower():
+            final_answer = f"Transaction '{target_id}' was not found in the reconciliation dataset. No matching invoice or transaction was found in the available reconciliation data."
+        elif target_id and target_id.lower() not in final_answer.lower():
+            final_answer = f"Transaction '{target_id}' was not found. {final_answer}"
+
     # Metering
-    success = result["confidence"] != "UNRESOLVED" or len(result["tools_called"]) > 0
+    success = error_info is None and confidence != "UNRESOLVED"
     usage.record_question_call(success=success)
-    result["usage"] = usage.get_usage_stats()
     
-    # Audit logging (secret-safe)
+    result_payload = {
+        "answer": final_answer,
+        "confidence": confidence,
+        "evidence": evidence,
+        "tools_called": tools_called,
+        "usage": usage.get_usage_stats(),
+        "error": error_info
+    }
+    
+    # Audit logging
     audit.log_interaction(
         question=question.strip(),
-        tools=result["tools_called"],
-        answer=result["answer"],
-        confidence=result["confidence"],
-        evidence=result["evidence"],
-        error=result["error"],
-        usage=result["usage"]
+        tools=tools_called,
+        answer=final_answer,
+        confidence=confidence,
+        evidence=evidence,
+        error=error_info,
+        usage=result_payload["usage"]
     )
     
-    return result
+    return result_payload

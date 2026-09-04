@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getUsageStats } from '../api/usage';
+import { getUsageStats, updatePricingTier } from '../api/usage';
 import { UsageStats } from '../api/types';
 import { SkeletonLoader } from '../components/Common/SkeletonLoader';
 import { RefreshCw } from 'lucide-react';
@@ -111,6 +111,72 @@ export const UsagePage: React.FC = () => {
             {stats.estimated_compute_units}
           </div>
           <div className="kpi-sub">PoC Billing Consumption</div>
+        </div>
+      </div>
+
+      {/* Commercial Pricing Tier & Cost Simulator */}
+      <div className="card-section" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <div className="card-title">Commercial Pricing Tier & Cost Simulator</div>
+            <div className="card-desc">
+              Pay-per-investigation pricing model (configurable at $0.05, $0.10, or $0.15 per reasoning cycle).
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Pricing Tier:</span>
+            {[0.05, 0.10, 0.15].map((tier) => {
+              const active = (stats.pricing_tier_usd ?? 0.10) === tier;
+              return (
+                <button
+                  key={tier}
+                  onClick={async () => {
+                    try {
+                      const updated = await updatePricingTier(tier);
+                      setStats(updated);
+                    } catch (e: any) {
+                      alert(e.message || 'Failed to update pricing tier');
+                    }
+                  }}
+                  style={{
+                    padding: '6px 14px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    borderRadius: 'var(--radius-sm)',
+                    border: active ? '1px solid var(--accent-primary)' : '1px solid var(--border-card)',
+                    backgroundColor: active ? 'var(--accent-primary)' : 'var(--bg-card)',
+                    color: active ? '#FFFFFF' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  ${tier.toFixed(2)} / query
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginTop: 16 }}>
+          <div style={{ padding: '14px 18px', backgroundColor: 'var(--bg-card-subtle)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-card)' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Estimated Cost (USD)</div>
+            <div className="font-mono" style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', marginTop: 4 }}>
+              ${(stats.estimated_usage_cost_usd ?? (stats.calls_this_session * (stats.pricing_tier_usd ?? 0.10))).toFixed(2)}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+              {stats.calls_this_session} queries × ${(stats.pricing_tier_usd ?? 0.10).toFixed(2)}
+            </div>
+          </div>
+
+          <div style={{ padding: '14px 18px', backgroundColor: 'var(--bg-card-subtle)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-card)' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Estimated Cost (INR)</div>
+            <div className="font-mono" style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)', marginTop: 4 }}>
+              ₹{(stats.estimated_usage_cost_inr ?? ((stats.calls_this_session * (stats.pricing_tier_usd ?? 0.10)) * (stats.usd_to_inr_rate ?? 85.0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+              Converted at 1 USD = ₹{(stats.usd_to_inr_rate ?? 85.0).toFixed(1)} INR
+            </div>
+          </div>
         </div>
       </div>
 

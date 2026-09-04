@@ -8,7 +8,7 @@
 
 > **"The reconciliation engine tells you what happened. The AI-CFO explains why, flags borderline reconciliation decisions, and provides verifiable evidence for every action."**
 
-This prototype is an **API-first financial operations reasoning layer** paired with a **production-grade React + TypeScript web application**. It features an editorial, warm-ivory fintech design system—rejecting generic AI chat bubbles and dark neon templates in favor of a serious finance operations workspace.
+This prototype is an **API-first financial operations reasoning layer** powered by **Google Gemini (`gemini-3.7-flash`)** paired with a **production-grade React + TypeScript web application**. It features an editorial, warm-ivory fintech design system—rejecting generic AI chat bubbles and dark neon templates in favor of a serious finance operations workspace.
 
 ---
 
@@ -37,7 +37,7 @@ This prototype is an **API-first financial operations reasoning layer** paired w
   - Status: `LOW CONFIDENCE • REVIEW RECOMMENDED`.
   - Boundary distance metrics (e.g. `0.05%` from the `3.50%` upper tolerance limit).
 * **Script**:
-  > *"Here is one of our key product innovations. Traditional reconciliation engines use static tolerance bands—here, 1.0% to 3.5% fee deduction. A transaction with a 3.45% deduction is classified as MATCHED by the engine, but in reality, it could be a concealed price dispute or unauthorized short payment. Our AI-CFO confidence layer identifies these borderline matches and flags them for controller review before books are closed."*
+  > *"Here is one of our key product innovations. Traditional reconciliation engines use static tolerance bands—here, 1.0% to 3.5% fee deduction. A transaction with a 3.45% deduction is classified as MATCHED by the baseline engine, but in reality, it could be a concealed price dispute or unauthorized fee deduction. Our AI-CFO confidence layer identifies these borderline matches and flags them for controller review before books are closed."*
 
 ---
 
@@ -49,21 +49,21 @@ This prototype is an **API-first financial operations reasoning layer** paired w
   - Prominent action button: **`Ask AI-CFO About This Transaction`**.
 * **Action**: Click **`Ask AI-CFO About This Transaction`**.
 * **Script**:
-  > *"Finance teams need smooth workflows. In our Reconciliation Ledger, clicking any transaction opens a slide-over inspection drawer. Clicking 'Ask AI-CFO' hands off the transaction directly to our reasoning core."*
+  > *"Finance teams need smooth workflows. In our Reconciliation Ledger, clicking any transaction opens a slide-over inspection drawer. Clicking 'Ask AI-CFO' hands off the transaction directly to our Google Gemini reasoning core."*
 
 ---
 
 ### Step 4: AI Investigation & Machine-Readable Evidence
 * **Action**: The app smoothly transitions to the **`Ask AI-CFO`** workspace with the question pre-filled and running.
 * **Judge Sees**:
-  - Calm skeleton loader while the reasoning engine executes tools.
+  - Clean skeleton loader while the multi-turn Gemini reasoning engine executes deterministic tools.
   - **Executive Finding**: 
     > `Invoice INV1060 for Atlas Mobility (₹145,000.00) triggered a DUPLICATE_SETTLEMENT exception. Multiple settlements (SET1059; SET1060) were received totaling ₹290,000.00. This indicates a potential double disbursement or split settlement requiring immediate review.`
   - **Confidence Badge**: `HIGH CONFIDENCE` (Muted emerald badge).
   - **Verifiable Financial Evidence Table**: Machine-readable breakdown listing invoice ID, transaction IDs, customer, amounts, status, and source file (`reconciliation_report.csv`).
   - **Expandable Audit Trace**: Click `▸ View Audit Trail & Tool Calls` to show deterministic tool `get_transaction`, arguments `{"identifier": "INV1060"}`, latency `1.2ms`, and raw JSON output.
 * **Script**:
-  > *"The AI doesn't guess or hallucinate numbers. It calls our deterministic `get_transaction` tool, detects the duplicate disbursement of ₹2.9L across two settlement records, and generates an executive summary backed by verifiable machine evidence and an inspection trace."*
+  > *"The AI doesn't guess or hallucinate numbers. It calls our deterministic `get_transaction` tool through native Gemini function declarations, detects the duplicate disbursement of ₹2.9L across two settlement records, and generates an executive summary backed by verifiable machine evidence."*
 
 ---
 
@@ -80,9 +80,9 @@ This prototype is an **API-first financial operations reasoning layer** paired w
 ### Step 6: Anti-Hallucination & Graceful Failure Handling
 * **Action**: In the question box, click the chip: **`Why didn't INV9999 match?`**
 * **Judge Sees**:
-  - **Executive Finding**: `Transaction / Invoice 'INV9999' was not found in the reconciliation dataset. No matching invoice or settlement record exists in the system.`
+  - **Executive Finding**: `Transaction 'INV9999' was not found in the reconciliation dataset. No matching invoice or transaction was found in the available reconciliation data.`
   - **Confidence Badge**: `UNRESOLVED` (Muted red badge).
-  - No fabricated customer names, no made-up amounts.
+  - Zero fabricated customer names, zero made-up amounts.
 * **Script**:
   > *"When queried on nonexistent invoice INV9999, the AI refuses to fabricate data. It returns an UNRESOLVED status with a clear failure explanation—preventing financial hallucinations."*
 
@@ -98,13 +98,26 @@ This prototype is an **API-first financial operations reasoning layer** paired w
 
 ---
 
-### Step 8: API Metering & Commercial Readiness
+### Step 8: Commercial Pricing Tiers & API Metering Simulator
 * **Action**: Click on **`API Metering`** in the sidebar.
 * **Judge Sees**:
   - Live session telemetry: Questions Answered, Total Tool Calls, Avg Tools/Question, and Compute Units.
-  - Deterministic Tool Invocations breakdown table: `get_transaction`, `list_exceptions`, `get_batch_summary`, `get_low_confidence_matches`.
+  - **Commercial Pricing Tier & Cost Simulator**: Switch between `$0.05 (Starter)`, `$0.10 (Standard)`, and `$0.15 (Enterprise)` tiers.
+  - Real-time estimated session cost in both **USD ($)** and converted **INR (₹)** at `₹85.0 / USD`.
+  - Deterministic Tool Invocations breakdown table.
 * **Script**:
-  > *"Finally, the system is commercially architected for API monetization. We meter every tool and investigation, ready for a pay-per-operation pricing model across banking, ERP, and payment gateway integrations."*
+  > *"The system is commercially architected for API monetization. We meter every tool invocation and support dynamic pricing tiers ($0.05 to $0.15 per investigation) with automatic multi-currency conversion for enterprise billing."*
+
+---
+
+### Step 9: SMB Partner Portal & External Gateway Normalizer
+* **Action**: Click on **`SMB Partner Portal`** in the sidebar.
+* **Judge Sees**:
+  - Simulated **Acme Cloud Solutions** merchant dashboard (MID-884920).
+  - An SMB merchant clicking **"Inspect"** on an order triggers the embedded Razorpay AI-CFO reasoning widget directly inside their SaaS billing interface.
+  - Tab 2 demonstrates the **Razorpay Settlement Adapter (`adapter.py`)**, normalizing raw gateway webhook payloads (amounts in paise, fee splits, UTR references) into canonical reconciliation formats.
+* **Script**:
+  > *"Finally, here is our platform vision: the AI-CFO is completely embeddable. An SMB using Razorpay or an external SaaS platform can embed our reasoning widget directly into their merchant portal, normalizing gateway settlement feeds and answering customer billing questions in real time."*
 
 ---
 

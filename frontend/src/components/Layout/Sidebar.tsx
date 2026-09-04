@@ -6,10 +6,11 @@ import {
   Sparkles, 
   FileText, 
   Gauge, 
-  Scale
+  Scale,
+  Store
 } from 'lucide-react';
 
-export type NavTab = 'overview' | 'reconciliation' | 'review-queue' | 'ask-ai' | 'audit' | 'usage';
+export type NavTab = 'overview' | 'reconciliation' | 'review-queue' | 'ask-ai' | 'audit' | 'usage' | 'partner-portal';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -25,6 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, review
     { id: 'ask-ai' as NavTab, label: 'Ask AI-CFO', icon: Sparkles },
     { id: 'audit' as NavTab, label: 'Audit Trail', icon: FileText },
     { id: 'usage' as NavTab, label: 'API Metering', icon: Gauge },
+    { id: 'partner-portal' as NavTab, label: 'SMB Partner Portal', icon: Store },
   ];
 
   return (
